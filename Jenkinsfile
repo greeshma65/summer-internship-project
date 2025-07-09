@@ -1,6 +1,10 @@
 pipeline {
     agent {'slave'}
 
+    tools {
+     maven 'maven'
+    }
+
     stages {
         
         stage('Compile the Source Code') {
