@@ -47,6 +47,19 @@ pipeline {
             }
         }
 
+        stage('Deploy Application on EKS Cluster') {
+            steps {
+                withKubeCredentials(kubectlCredentials: [[
+                    credentialsId: 'k8s-token',
+                    clusterName: 'java-eks',
+                    namespace: 'java-app',
+                    serverUrl: 'https://csi-aks-microservices-dns-x9c1s2k4.hcp.centralindia.azmk8s.io'
+                ]]) {
+                    sh "kubectl apply -f k8s-deployment.yml -n java-app"
+                }
+            }
+        }
+
         stage('Verify Pods') {
             steps {
                 withKubeCredentials(kubectlCredentials: [[
