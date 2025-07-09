@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: java-springboot-container
-        image: vikasprince/java-app:latest  
+        image: vikasprince/csi-frontend  
         ports:
         - containerPort: 8080  
         
