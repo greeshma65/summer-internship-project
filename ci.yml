@@ -1,0 +1,261 @@
+name: Enterprise CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main, dev, qa ]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to promote'
+        required: true
+        type: string
+
+env:
+  JAVA_VERSION: '17'
+  IMAGE_NAME: pharma-app
+
+jobs:
+
+  build-and-test:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.set-tag.outputs.image_tag }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v3
+
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+
+      - name: Set image tag
+        id: set-tag
+        run: echo "image_tag=${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Cache Maven packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+
+      - name: Run unit tests and build
+        run: mvn clean install --batch-mode
+
+      - name: Upload JUnit Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: junit-report
+          path: target/surefire-reports
+
+      - name: Publish Test Summary
+        uses: dorny/test-reporter@v1
+        with:
+          name: Unit Tests
+          path: target/surefire-reports/*.xml
+          reporter: java-junit
+
+  gitleaks-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+
+  sonarqube:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: SonarQube Scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          mvn verify sonar:sonar \
+            -Dsonar.projectKey=pharma-app \
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+
+  trivy-fs-scan:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Trivy FS Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+
+  docker-build-and-scan:
+    needs: [build-and-test, gitleaks-scan, sonarqube, trivy-fs-scan]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR Login
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+
+      - name: Set image tag
+        id: set-tag
+        run: echo "image_tag=${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Build Docker Image
+        run: |
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.set-tag.outputs.image_tag }} .
+
+      - name: Trivy Image Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'image'
+          image-ref: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.set-tag.outputs.image_tag }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Push Docker Image
+        run: |
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ steps.set-tag.outputs.image_tag }}
+
+  push-artifact-to-nexus:
+    needs: [build-and-test, trivy-fs-scan]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Push JAR to Nexus
+        run: |
+          curl -v -u ${{ secrets.NEXUS_USERNAME }}:${{ secrets.NEXUS_PASSWORD }} \
+          --upload-file target/pharma-app.jar \
+          ${{ secrets.NEXUS_URL }}/repository/maven-releases/com/pharma/pharma-app/${{ github.sha }}/pharma-app-${{ github.sha }}.jar
+
+  update-gitops-dev:
+    needs: docker-build-and-scan
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+    steps:
+      - name: Checkout GitOps Repo
+        uses: actions/checkout@v3
+        with:
+          repository: your-org/pharma-gitops
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+
+      - name: Update image tag in Dev YAML
+        run: |
+          cd gitops
+          sed -i "s|image: .*|image: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-test.outputs.image_tag }}|" environments/dev/deployment.yaml
+
+      - name: Create PR to GitOps (Dev)
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITOPS_TOKEN }}
+          commit-message: "Deploy to Dev - Image Tag ${{ needs.build-and-test.outputs.image_tag }}"
+          title: "Deploy to Dev - ${{ needs.build-and-test.outputs.image_tag }}"
+          body: "Automated deployment to Dev environment"
+          base: main
+          branch: auto/update-dev-${{ github.sha }}
+
+  update-gitops-qa:
+    needs: docker-build-and-scan
+    if: github.ref_name == 'qa'
+    runs-on: ubuntu-latest
+    environment:
+      name: qa
+    steps:
+      - name: Checkout GitOps Repo
+        uses: actions/checkout@v3
+        with:
+          repository: your-org/pharma-gitops
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+
+      - name: Update image tag in QA YAML
+        run: |
+          cd gitops
+          sed -i "s|image: .*|image: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-test.outputs.image_tag }}|" environments/qa/deployment.yaml
+
+      - name: Create PR to GitOps (QA)
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITOPS_TOKEN }}
+          commit-message: "Promote to QA - Image Tag ${{ needs.build-and-test.outputs.image_tag }}"
+          title: "Promote to QA - ${{ needs.build-and-test.outputs.image_tag }}"
+          body: "Automated promotion to QA"
+          base: qa
+          branch: auto/update-qa-${{ github.sha }}
+
+  promote-to-staging:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+    steps:
+      - name: Checkout GitOps Repo
+        uses: actions/checkout@v3
+        with:
+          repository: your-org/pharma-gitops
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+
+      - name: Update image tag in Staging YAML
+        run: |
+          cd gitops
+          sed -i "s|image: .*|image: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.image_tag }}|" environments/staging/deployment.yaml
+
+      - name: Create PR to GitOps (Staging)
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITOPS_TOKEN }}
+          commit-message: "Promote to Staging - Image Tag ${{ github.event.inputs.image_tag }}"
+          title: "Staging Release - ${{ github.event.inputs.image_tag }}"
+          body: "Manual promotion to staging"
+          base: staging
+          branch: auto/promote-staging-${{ github.sha }}
+
+  promote-to-prod:
+    if: github.event_name == 'workflow_dispatch'
+    needs: promote-to-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Checkout GitOps Repo
+        uses: actions/checkout@v3
+        with:
+          repository: your-org/pharma-gitops
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+
+      - name: Update image tag in Prod YAML
+        run: |
+          cd gitops
+          sed -i "s|image: .*|image: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.image_tag }}|" environments/prod/deployment.yaml
+
+      - name: Create PR to GitOps (Prod)
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITOPS_TOKEN }}
+          commit-message: "Promote to Production - Image Tag ${{ github.event.inputs.image_tag }}"
+          title: "Production Release - ${{ github.event.inputs.image_tag }}"
+          body: "Manual promotion to production"
+          base: production
+          branch: auto/promote-prod-${{ github.sha }}
