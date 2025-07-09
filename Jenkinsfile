@@ -31,7 +31,7 @@ pipeline {
             }
         }
 
-        stage('Login to Docker Hub and Push Image') {
+        stage('Login to Docker Hub') {
             steps {
                 script {
                     withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
@@ -41,7 +41,7 @@ pipeline {
             }
         }
 
-        stage('Login to Docker Hub and Push Image') {
+        stage('Push Image') {
             steps {
                 script {
                     withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
