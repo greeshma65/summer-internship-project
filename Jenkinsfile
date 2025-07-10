@@ -59,7 +59,7 @@ pipeline {
                     credentialsId: 'k8s-token',
                     clusterName: 'java-eks',
                     namespace: 'java-app',
-                    serverUrl: 'https://27F0A5214A026F84AC4DFFD589AF1B9A.gr7.ap-south-1.eks.amazonaws.com'
+                    serverUrl: 'https://C7AAFF3B256A5F8A2A3792FF27CC4B0A.gr7.ap-south-1.eks.amazonaws.com'
                 ]]) {
                     sh "kubectl apply -f k8s-deployment.yml -n java-app"
                 }
@@ -72,7 +72,7 @@ pipeline {
                     credentialsId: 'k8s-token',
                     clusterName: 'java-eks',
                     namespace: 'java-app',
-                    serverUrl: 'https://27F0A5214A026F84AC4DFFD589AF1B9A.gr7.ap-south-1.eks.amazonaws.com'
+                    serverUrl: 'https://C7AAFF3B256A5F8A2A3792FF27CC4B0A.gr7.ap-south-1.eks.amazonaws.com'
                 ]]) {
                     sh "kubectl get pods -n java-app"
                 }
@@ -85,7 +85,7 @@ pipeline {
                     credentialsId: 'k8s-token',
                     clusterName: 'java-eks',
                     namespace: 'java-app',
-                    serverUrl: 'https://27F0A5214A026F84AC4DFFD589AF1B9A.gr7.ap-south-1.eks.amazonaws.com'
+                    serverUrl: 'https://C7AAFF3B256A5F8A2A3792FF27CC4B0A.gr7.ap-south-1.eks.amazonaws.com'
                 ]]) {
                     sh "kubectl get svc -n java-app"
                 }
