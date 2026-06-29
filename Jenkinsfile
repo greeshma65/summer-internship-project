@@ -57,11 +57,11 @@ pipeline {
             steps {
                 withKubeCredentials(kubectlCredentials: [[
                     credentialsId: 'k8s-token',
-                    clusterName: 'java-eks',
-                    namespace: 'java-app',
-                    serverUrl: 'https://C7AAFF3B256A5F8A2A3792FF27CC4B0A.gr7.ap-south-1.eks.amazonaws.com'
+                    clusterName: 'EKS-1',
+                    namespace: 'webapps',
+                    serverUrl: 'https://6C81B218D96318D670F6470A105ACDED.gr7.ap-south-1.eks.amazonaws.com'
                 ]]) {
-                    sh "kubectl apply -f k8s-deployment.yml -n java-app"
+                    sh "kubectl apply -f k8s-deployment.yml -n webapps"
                 }
             }
         }
@@ -70,11 +70,11 @@ pipeline {
             steps {
                 withKubeCredentials(kubectlCredentials: [[
                     credentialsId: 'k8s-token',
-                    clusterName: 'java-eks',
-                    namespace: 'java-app',
-                    serverUrl: 'https://C7AAFF3B256A5F8A2A3792FF27CC4B0A.gr7.ap-south-1.eks.amazonaws.com'
+                    clusterName: 'EKS-1',
+                    namespace: 'webapps',
+                    serverUrl: 'https://6C81B218D96318D670F6470A105ACDED.gr7.ap-south-1.eks.amazonaws.com'
                 ]]) {
-                    sh "kubectl get pods -n java-app"
+                    sh "kubectl get pods -n webapps"
                 }
             }
         }
@@ -83,11 +83,11 @@ pipeline {
             steps {
                 withKubeCredentials(kubectlCredentials: [[
                     credentialsId: 'k8s-token',
-                    clusterName: 'java-eks',
-                    namespace: 'java-app',
-                    serverUrl: 'https://C7AAFF3B256A5F8A2A3792FF27CC4B0A.gr7.ap-south-1.eks.amazonaws.com'
+                    clusterName: 'EKS-1',
+                    namespace: 'webapps',
+                    serverUrl: 'https://6C81B218D96318D670F6470A105ACDED.gr7.ap-south-1.eks.amazonaws.com'
                 ]]) {
-                    sh "kubectl get svc -n java-app"
+                    sh "kubectl get svc -n webapps"
                 }
             }
         }
