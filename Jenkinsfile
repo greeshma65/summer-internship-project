@@ -29,7 +29,7 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t vikasprince/java-app:latest .'
+                sh 'docker build -t greeshma369/java-app:latest .'
             }
         }
 
@@ -47,7 +47,7 @@ pipeline {
             steps {
                 script {
                     withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
-                        sh "docker push vikasprince/java-app:latest"
+                        sh "docker push greeshma369/java-app:latest"
                     }
                 }
             }
